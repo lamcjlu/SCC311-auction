@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 public class FrontEnd implements Auction {
     private int primaryID;
-    private final int n = 5; // Number of replicas to maintain
+    private final int n = 4; // Number of replicas to maintain
     private static HashMap<Integer, String> replicaTable;
 
     private void fixReplica() {
@@ -77,11 +77,10 @@ public class FrontEnd implements Auction {
         }
     }
 
-    public FrontEnd() throws InterruptedException {
+    public FrontEnd() {
         this.primaryID = -1;
         replicaTable = new HashMap<>();
-        fixReplica();
-        wait(500);
+        // fixReplica();
     }
 
     private Auction InvokePrimary() throws RemoteException {
@@ -204,7 +203,6 @@ public class FrontEnd implements Auction {
             fixReplica(); // Failover to another replica
             return InvokePrimary().getSpec(userID, itemID, token);
         }
-
     }
 
     @Override
