@@ -17,15 +17,15 @@ public class FrontEnd implements Auction {
     private void fixReplica() {
         if (primaryID == -1) {
             //First initialization, spawn n replicas and elect the last one as primary
-            System.out.println("(Fix) First initialization, spawning " + n + " replicas. Electing Auction_" + n + " as primary.");
+            System.out.println("(FE) First initialization, spawning " + n + " replicas. Electing Auction_" + n + " as primary.");
             this.primaryID = n;
 
             for (int i = 0; i <= n; i++) {
                 try {
-                    System.out.println("java Replica " + i);
+                    System.out.println("FE: java Replica " + i);
                     Runtime.getRuntime().exec("java Replica " + i);
                 } catch (Exception e) {
-                    System.err.println("(Fix) Error in starting new replica: " + e.getMessage());
+                    System.err.println("(FE) Error in starting new replica: " + e.getMessage());
                 }
             }
 
@@ -45,7 +45,7 @@ public class FrontEnd implements Auction {
             try {
                 Runtime.getRuntime().exec("java Replica " + primaryID);
             } catch (Exception e) {
-                System.err.println("(Fix) Error in starting new primary replica: " + e.getMessage());
+                System.err.println("(FE) Error in starting new primary replica: " + e.getMessage());
             }
 
             //check replicaTable & size
@@ -56,7 +56,7 @@ public class FrontEnd implements Auction {
                 try {
                     Runtime.getRuntime().exec("java Replica " + (findMaxKeyValue(replicaTable) + i));
                 } catch (Exception e) {
-                    System.err.println("(Fix) Error in starting new replica: " + e.getMessage());
+                    System.err.println("(FE) Error in starting new replica: " + e.getMessage());
                 }
             }
         }
@@ -79,20 +79,21 @@ public class FrontEnd implements Auction {
 
     public FrontEnd() throws InterruptedException {
         this.primaryID = -1;
+        replicaTable = new HashMap<>();
         fixReplica();
         wait(500);
     }
 
     private Auction InvokePrimary() throws RemoteException {
         String replicaName = "Auction_" + primaryID;
-        System.out.println("Invoking primary replica: " + replicaName);
+        System.out.println("(FE) Invoking primary replica: " + replicaName);
         try {
                 Registry registry = LocateRegistry.getRegistry("localhost");
                 Auction replica = (Auction) registry.lookup(replicaName);
                 replica.challenge(primaryID, "Primary"); // Health check
                 return replica;
             } catch (Exception e) {
-                System.err.println("(Invoke) PrimaryReplica " + replicaName + " failed, re-electing.");
+                System.err.println("(FE) Invoke: PrimaryReplica " + replicaName + " failed, re-electing.");
                 fixReplica(); // Fixing the failed replica
                 return InvokePrimary(); // Recursive call to invoke the new primary replica
             }
@@ -136,8 +137,17 @@ public class FrontEnd implements Auction {
                 replica.authenticate(-1, null); // Assuming this method exists in the Auction interface
                 aliveCount++;
             } catch (Exception e) {
+//                try {
+//                    String replicaName = entry.getValue();
+//                    Registry registry = LocateRegistry.getRegistry("localhost");
+//                    Replica failingReplica = (Replica) registry.lookup(replicaName);
+//                    failingReplica.suicide(); // Assuming suicide() is a method in Replica
+//                } catch (Exception innerException) {
+//                    System.err.println("(FE) ChkAlive - Error in invoking suicide on replica " + entry.getKey() + ": " + innerException.getMessage());
+//                }
                 iterator.remove(); // Remove the replica from the table if it raises an exception
-                System.err.println("(ChkAlv) Removing failed replica: " + entry.getKey());
+
+                System.err.println("(FE) ChkAlive - Removing failed replica: " + entry.getKey());
             }
         }
 
@@ -254,7 +264,6 @@ public class FrontEnd implements Auction {
     public static void main(String[] args) {
         try {
             FrontEnd frontEnd = new FrontEnd();
-            replicaTable = new HashMap<>();
             String name = "FrontEnd";
             Auction stub = (Auction) UnicastRemoteObject.exportObject(frontEnd, 0);
             Registry registry = LocateRegistry.getRegistry();

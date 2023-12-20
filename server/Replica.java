@@ -48,7 +48,7 @@ public class Replica implements Auction {
 
         // If this is the primary replica, send payload to all other replicas
         if (this.replicaID == primaryReplicaId && this.isPrimary) {
-            System.out.println("(Primary) Syncing state with " + checkAliveReplicas() + " other replicas");
+            System.out.println("(Auction_"+replicaID+"-Primary) Syncing state with " + checkAliveReplicas() + " other replicas");
             for (Map.Entry<Integer, String> entry : replicaTable.entrySet()) {
                 int replicaID = entry.getKey();
 
@@ -158,7 +158,7 @@ public class Replica implements Auction {
     @Override
     public ChallengeInfo challenge(int userID, String clientChallenge) throws RemoteException {
         // ChallangeInfo is now a helper method :>
-
+        System.out.println("(Auction_"+this.replicaID+" Info) Received challenge from replica ID: " + userID);
         if (userID == this.replicaID && clientChallenge.equals("Primary")){
             // Assign myself as the primary replica
             this.isPrimary = true;
@@ -178,7 +178,7 @@ public class Replica implements Auction {
             // If I were the primary replica but the new primary replica is not me
             // I am no longer the primary replica
             this.isPrimary = false;
-            suiside();
+            suicide();
         }
         return null;
     }
@@ -290,7 +290,7 @@ public class Replica implements Auction {
     private enum AccessType {
         BID, CLOSE_AUCTION, MODIFY_BID
     }
-    private void suiside(){
+    public void suicide(){
         System.exit(0);
     }
     public static void main(String[] args) {
