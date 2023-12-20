@@ -20,6 +20,7 @@ public class Replica implements Auction {
 
     // Replica specific fields
     private int replicaId;
+    private int primaryID;
     private boolean isPrimary = false;
     private final Map<Integer, String> replicaTable; // Maps replica ID to their address
 
@@ -40,13 +41,13 @@ public class Replica implements Auction {
     }
 
     // Sync method to synchronize state with other replicas
-    public void sync(int primaryReplicaId, payload payload) throws RemoteException {
+    public void sync(int primaryReplicaId, Payload RemotePayload) throws RemoteException {
         if (this.replicaId == primaryReplicaId) {
             this.isPrimary = true;
         } else {
             // If this is a backup replica, synchronize its state with the primary
-            if (payloadIsLargerThanCurrentState(payload)) {
-                updateStateWithPayload(payload);
+            if (payloadIsLargerThanCurrentState(RemotePayload)) {
+                updateStateWithPayload(RemotePayload);
             } else {
                 // Return the current state to the caller for them to update
                 sendCurrentStateToCaller();
@@ -54,6 +55,19 @@ public class Replica implements Auction {
         }
     }
 
+    public Payload getpayload(){
+        Payload payload = new Payload();
+        payload.auctionItems = auctionItems;
+        payload.userInfo = userInfo;
+        payload.auctionSaleItems = auctionSaleItems;
+        payload.itemToHighestBidder = itemToHighestBidder;
+        payload.itemToHighestBid = itemToHighestBid;
+        payload.auctionSaleItemToCreator = auctionSaleItemToCreator;
+        payload.replicaTable = replicaTable;
+        payload.itemIDCounter = itemIDCounter;
+        payload.userIDCounter = userIDCounter;
+        return payload;
+    }
     @Override
     public int getPrimaryReplicaID() throws RemoteException {
         return 0;
@@ -61,8 +75,26 @@ public class Replica implements Auction {
 
     @Override
     public ChallengeInfo challenge(int userID, String clientChallenge) throws RemoteException {
-        if (userID == -1 && clientChallenge.equals("Alive")){
+        // ChallangeInfo is now a helper method so I dont waste space :>
+
+        if (userID == this.replicaId && clientChallenge.equals("Primary")){
+            // Assign myself as the primary replica
             this.isPrimary = true;
+            // Initialize Sync
+            sync(this.replicaId, getpayload());
+        }
+        if (userID == -2 && clientChallenge.equals("Init")){
+            // Build the auction items as I am the genesis primary replica
+            this.initAuctionItems();
+        }
+        if(!this.isPrimary && clientChallenge.equals("NewPrimary")){
+            // Update new primary replica ID
+            this.primaryID = userID;
+        }
+        if(this.isPrimary && userID != replicaId){
+            // If I were the primary replica but the new primary replica is not me
+            // I am no longer the primary replica
+            this.isPrimary = false;
         }
         return null;
     }
@@ -88,7 +120,6 @@ public class Replica implements Auction {
         return userID;
     }
 
-    // WARN !
     private void initAuctionItems() {
         auctionItems.put(1, new AuctionItem(1, "Vintage Watch", "A rare vintage watch from 1950s.", 1000));
         auctionItems.put(2, new AuctionItem(2, "Classic Book", "A first edition of a classic novel.", 500));

@@ -1,6 +1,6 @@
 import java.util.Map;
 
-public class payload {
+public class Payload {
     Map<Integer, AuctionItem> auctionItems;
     Map<Integer, String> userInfo;
     Map<Integer, AuctionSaleItem> auctionSaleItems;

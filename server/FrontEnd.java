@@ -4,65 +4,89 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.security.PublicKey;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class FrontEnd implements Auction {
-    private int PrimaryID;
+    private int primaryID;
     private final int n = 5; // Number of replicas to maintain
     private static HashMap<Integer, String> replicaTable;
 
     private void fixReplica() {
-        // Spawn a new replica and determine its ID (max existing ID + 1)
-        PrimaryID = (findMaxKeyValue(replicaTable) + 1);
-        // Start the new replica
-        try {
-            Runtime.getRuntime().exec("java Replica " + PrimaryID);
-        } catch (Exception e) {
-            System.err.println("Error in starting new replica: " + e.getMessage());
+        if (primaryID == 0) {
+            //First initialization, spawn n replicas and elect the last one as primary
+            System.out.println("(Fix) First initialization, spawning " + n + " replicas. Electing Auction_" + n + " as primary.");
+            this.primaryID = n;
+
+            for (int i = 0; i < n; i++) {
+                try {
+                    Runtime.getRuntime().exec("java Replica " + i);
+                } catch (Exception e) {
+                    System.err.println("(Fix) Error in starting new replica: " + e.getMessage());
+                }
+            }
+
+            try {
+                InvokePrimary().challenge(-2, "Init"); // Launch check
+                System.out.println("(Fix) PR_Launch: Auction_" + primaryID + " is alive.");
+            } catch (Exception e) {
+                System.out.println("(Fix) PR_Launch: Auction_" + primaryID + " failed.");
+                fixReplica();
+            }
+
+        } else {
+            // Spawn a new Primary replica and determine its ID (max existing ID + 1)
+            this.primaryID = (findMaxKeyValue(replicaTable) + 1);
+            try {
+                Runtime.getRuntime().exec("java Replica " + primaryID);
+            } catch (Exception e) {
+                System.err.println("(Fix) Error in starting new primary replica: " + e.getMessage());
+            }
+
+            //check replicaTable & size
+            DiscoverReplicas();
+            //count alive replicas from replicaTable and spawn new
+            int alive = checkAliveReplicas();
+            for(int i = 0; i < n - alive; i++){
+                try {
+                    Runtime.getRuntime().exec("java Replica " + (findMaxKeyValue(replicaTable) + i));
+                } catch (Exception e) {
+                    System.err.println("(Fix) Error in starting new replica: " + e.getMessage());
+                }
+            }
         }
 
         // Update the replica names list
-        String newReplicaName = "Auction_" + PrimaryID;
-        replicaTable.put(PrimaryID, newReplicaName);
+        DiscoverReplicas();
 
         // Broadcast the new primary replica ID to all replicas
         try {
             Registry registry = LocateRegistry.getRegistry("localhost");
-            for (String replicaName : replicaNames) {
+            for (Map.Entry<Integer, String> entry : replicaTable.entrySet()) {
+                String replicaName = entry.getValue();
                 Auction replica = (Auction) registry.lookup(replicaName);
-                replica.sync(newReplicaId, /* payload including current state */);
+                replica.challenge(primaryID, "NewPrimary");
             }
         } catch (Exception e) {
             System.err.println("Error in broadcasting new primary replica: " + e.getMessage());
         }
     }
 
-    private void syncReplicas(String newPrimaryName) throws RemoteException {
-        Registry registry = LocateRegistry.getRegistry("localhost");
-        Auction newPrimary = (Auction) registry.lookup(newPrimaryName);
-        Object payload = newPrimary.retrieveState(); // Assuming this method retrieves the state
-
-        for (String replicaName : replicaNames) {
-            if (!replicaName.equals(newPrimaryName)) {
-                Auction replica = (Auction) registry.lookup(replicaName);
-                replica.sync(primaryReplicaID, payload);
-            }
-        }
-    }
-
-    public FrontEnd() {
-        this.PrimaryID = 0;
-        DiscoverReplicas();
+    public FrontEnd() throws InterruptedException {
+        this.primaryID = -1;
+        fixReplica();
+        wait(500);
     }
 
     private Auction InvokePrimary() throws RemoteException {
-        String replicaName = "Auction_" + PrimaryID;
+        String replicaName = "Auction_" + primaryID;
+        System.out.println("Invoking primary replica: " + replicaName);
         try {
                 Registry registry = LocateRegistry.getRegistry("localhost");
                 Auction replica = (Auction) registry.lookup(replicaName);
-                replica.challenge(-1, "Alive"); // Health check
+                replica.challenge(primaryID, "Primary"); // Health check
                 return replica;
             } catch (Exception e) {
                 System.err.println("(Invoke) PrimaryReplica " + replicaName + " failed, re-electing.");
@@ -92,6 +116,28 @@ public class FrontEnd implements Auction {
             System.err.println("Exception in DiscoverReplicas: " + e.toString());
             e.printStackTrace();
         }
+    }
+
+    private int checkAliveReplicas() {
+        int aliveCount = 0;
+
+        // Using an Iterator to avoid ConcurrentModificationException while removing elements
+        Iterator<Map.Entry<Integer, String>> iterator = replicaTable.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Integer, String> entry = iterator.next();
+            try {
+                String replicaName = entry.getValue();
+                Registry registry = LocateRegistry.getRegistry("localhost");
+                Auction replica = (Auction) registry.lookup(replicaName);
+                replica.authenticate(-1, null); // Assuming this method exists in the Auction interface
+                aliveCount++;
+            } catch (Exception e) {
+                iterator.remove(); // Remove the replica from the table if it raises an exception
+                System.err.println("(ChkAlv) Removing failed replica: " + entry.getKey());
+            }
+        }
+
+        return aliveCount;
     }
 
     @Override
