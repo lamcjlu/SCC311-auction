@@ -1,31 +1,34 @@
-// Server.java
+// Replica.java
+import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.security.*;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Replica implements Auction {
-    private final Map<Integer, AuctionItem> auctionItems;
-    private final Map<Integer, String> userInfo; // Maps user ID to email
-    private final Map<Integer, AuctionSaleItem> auctionSaleItems;
-    private final Map<Integer, Integer> itemToHighestBidder; // Maps item ID to highest bidder ID
-    private final Map<Integer, Integer> itemToHighestBid; // Maps item ID to highest bid value
-    private final Map<Integer, Integer> auctionSaleItemToCreator; // Maps auction sale item ID to creator ID
-
+    private Map<Integer, AuctionItem> auctionItems;
+    private Map<Integer, String> userInfo; // Maps user ID to email
+    private Map<Integer, AuctionSaleItem> auctionSaleItems;
+    private Map<Integer, Integer> itemToHighestBidder; // Maps item ID to highest bidder ID
+    private Map<Integer, Integer> itemToHighestBid; // Maps item ID to highest bid value
+    private Map<Integer, Integer> auctionSaleItemToCreator; // Maps auction sale item ID to creator ID
     private int itemIDCounter = 3;
     private int userIDCounter = 1;
 
     // Replica specific fields
-    private int replicaId;
+    private int replicaID;
     private int primaryID;
     private boolean isPrimary = false;
-    private final Map<Integer, String> replicaTable; // Maps replica ID to their address
+    private Map<Integer, String> replicaTable; // Keeps track of replicas
 
-    public Replica(int replicaId) throws RemoteException {
-        this.replicaId = replicaId;
+    public Replica(int replicaID) throws RemoteException {
+        this.replicaID = replicaID;
         this.isPrimary = false; // Initially set as non-primary
         this.replicaTable = new HashMap<>();
 
@@ -37,23 +40,40 @@ public class Replica implements Auction {
         auctionItems = new HashMap<>();
         userInfo = new HashMap<>();
         auctionSaleItems = new HashMap<>();
-        // Additional initialization as needed
     }
 
     // Sync method to synchronize state with other replicas
     public void sync(int primaryReplicaId, Payload RemotePayload) throws RemoteException {
-        if (this.replicaId == primaryReplicaId) {
-            this.isPrimary = true;
-        } else {
-            // If this is a backup replica, synchronize its state with the primary
-            if (payloadIsLargerThanCurrentState(RemotePayload)) {
-                updateStateWithPayload(RemotePayload);
-            } else {
-                // Return the current state to the caller for them to update
-                sendCurrentStateToCaller();
+        DiscoverReplicas();
+
+        // If this is the primary replica, send payload to all other replicas
+        if (this.replicaID == primaryReplicaId && this.isPrimary) {
+            System.out.println("(Primary) Syncing state with " + checkAliveReplicas() + " other replicas");
+            for (Map.Entry<Integer, String> entry : replicaTable.entrySet()) {
+                int replicaID = entry.getKey();
+
+                // Skip if the replica is the primary itself
+                if (replicaID == this.replicaID) {
+                    continue;
+                }
+
+                String replicaName = entry.getValue();
+                try {
+                    Registry registry = LocateRegistry.getRegistry("localhost");
+                    Replica targetReplica = (Replica) registry.lookup(replicaName);
+                    targetReplica.sync(this.primaryID, this.getpayload()); // send payload to replica
+                } catch (RemoteException e) {
+                    System.err.println("Error syncing with replica " + replicaName + ": " + e.getMessage());
+                } catch (NotBoundException e) {
+                    throw new RuntimeException(e);
+                }
             }
+        } else {
+            // If this is a backup replica, check if primary is ahead of self and update
+            updateStateWithPayload(RemotePayload);
         }
     }
+
 
     public Payload getpayload(){
         Payload payload = new Payload();
@@ -68,20 +88,82 @@ public class Replica implements Auction {
         payload.userIDCounter = userIDCounter;
         return payload;
     }
+
+    public void updateStateWithPayload(Payload remotePayload) {
+        if (remotePayload.getSize() > this.getpayload().getSize()) {
+            this.auctionItems = remotePayload.auctionItems;
+            this.userInfo = remotePayload.userInfo;
+            this.auctionSaleItems = remotePayload.auctionSaleItems;
+            this.itemToHighestBidder = remotePayload.itemToHighestBidder;
+            this.itemToHighestBid = remotePayload.itemToHighestBid;
+            this.auctionSaleItemToCreator = remotePayload.auctionSaleItemToCreator;
+            this.replicaTable = remotePayload.replicaTable;
+            this.itemIDCounter = remotePayload.itemIDCounter;
+            this.userIDCounter = remotePayload.userIDCounter;
+            System.out.println("(Info) Auction_"+ replicaID +" State updated with larger remote payload.");
+        }
+    }
+    public void DiscoverReplicas() {
+        try {
+            Registry registry = LocateRegistry.getRegistry("localhost");
+            String[] boundNames = registry.list();
+
+            // Pattern to match "Auction_#" names
+            Pattern pattern = Pattern.compile("Auction_(\\d+)");
+            for (String name : boundNames) {
+                Matcher matcher = pattern.matcher(name);
+                if (matcher.find()) {
+                    // Extract ID and add to replicaTable
+                    int id = Integer.parseInt(matcher.group(1));
+                    replicaTable.put(id, name);
+                }
+            }
+            // Optionally, print out the discovered replicas
+            System.out.println("Discovered Replicas: " + replicaTable);
+        } catch (Exception e) {
+            System.err.println("Exception in DiscoverReplicas: " + e.toString());
+            e.printStackTrace();
+        }
+    }
+    private int checkAliveReplicas() {
+        int aliveCount = 0;
+
+        // Using an Iterator to avoid ConcurrentModificationException while removing elements
+        Iterator<Map.Entry<Integer, String>> iterator = replicaTable.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Integer, String> entry = iterator.next();
+            try {
+                String replicaName = entry.getValue();
+                Registry registry = LocateRegistry.getRegistry("localhost");
+                Auction replica = (Auction) registry.lookup(replicaName);
+                replica.authenticate(-1, null); // Assuming this method exists in the Auction interface
+                aliveCount++;
+            } catch (Exception e) {
+                iterator.remove(); // Remove the replica from the table if it raises an exception
+                System.err.println("(ChkAlv) Removing failed replica: " + entry.getKey());
+            }
+        }
+
+        return aliveCount;
+    }
     @Override
     public int getPrimaryReplicaID() throws RemoteException {
-        return 0;
+        if(isPrimary){
+            return this.replicaID;
+        } else {
+            return this.primaryID;
+        }
     }
 
     @Override
     public ChallengeInfo challenge(int userID, String clientChallenge) throws RemoteException {
-        // ChallangeInfo is now a helper method so I dont waste space :>
+        // ChallangeInfo is now a helper method :>
 
-        if (userID == this.replicaId && clientChallenge.equals("Primary")){
+        if (userID == this.replicaID && clientChallenge.equals("Primary")){
             // Assign myself as the primary replica
             this.isPrimary = true;
             // Initialize Sync
-            sync(this.replicaId, getpayload());
+            sync(this.replicaID, getpayload());
         }
         if (userID == -2 && clientChallenge.equals("Init")){
             // Build the auction items as I am the genesis primary replica
@@ -90,11 +172,13 @@ public class Replica implements Auction {
         if(!this.isPrimary && clientChallenge.equals("NewPrimary")){
             // Update new primary replica ID
             this.primaryID = userID;
+            System.out.println("(Auction_"+this.replicaID+" Info) I am new primary replica ID: " + userID);
         }
-        if(this.isPrimary && userID != replicaId){
+        if(this.isPrimary && userID != replicaID){
             // If I were the primary replica but the new primary replica is not me
             // I am no longer the primary replica
             this.isPrimary = false;
+            suiside();
         }
         return null;
     }
@@ -106,7 +190,13 @@ public class Replica implements Auction {
 
     @Override
     public AuctionItem getSpec(int userID, int itemID, String token) throws RemoteException {
+        if (isPrimary){
             return auctionItems.get(itemID);
+        } else {
+            // If this is a backup replica, synchronize its state with the primary
+            sync(this.primaryID, getpayload());
+        }
+        return auctionItems.get(itemID);
     }
 
     @Override
@@ -199,6 +289,9 @@ public class Replica implements Auction {
     }
     private enum AccessType {
         BID, CLOSE_AUCTION, MODIFY_BID
+    }
+    private void suiside(){
+        System.exit(0);
     }
     public static void main(String[] args) {
         try {

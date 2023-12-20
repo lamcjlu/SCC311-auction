@@ -15,13 +15,14 @@ public class FrontEnd implements Auction {
     private static HashMap<Integer, String> replicaTable;
 
     private void fixReplica() {
-        if (primaryID == 0) {
+        if (primaryID == -1) {
             //First initialization, spawn n replicas and elect the last one as primary
             System.out.println("(Fix) First initialization, spawning " + n + " replicas. Electing Auction_" + n + " as primary.");
             this.primaryID = n;
 
-            for (int i = 0; i < n; i++) {
+            for (int i = 0; i <= n; i++) {
                 try {
+                    System.out.println("java Replica " + i);
                     Runtime.getRuntime().exec("java Replica " + i);
                 } catch (Exception e) {
                     System.err.println("(Fix) Error in starting new replica: " + e.getMessage());
@@ -29,15 +30,17 @@ public class FrontEnd implements Auction {
             }
 
             try {
+                DiscoverReplicas();
                 InvokePrimary().challenge(-2, "Init"); // Launch check
                 System.out.println("(Fix) PR_Launch: Auction_" + primaryID + " is alive.");
             } catch (Exception e) {
-                System.out.println("(Fix) PR_Launch: Auction_" + primaryID + " failed.");
+                System.out.println("(Fix) PR_Launch: Auction_" + primaryID + " failed." + e.getMessage());
                 fixReplica();
             }
 
         } else {
             // Spawn a new Primary replica and determine its ID (max existing ID + 1)
+            System.out.println("PrimaryID: " + primaryID);
             this.primaryID = (findMaxKeyValue(replicaTable) + 1);
             try {
                 Runtime.getRuntime().exec("java Replica " + primaryID);
@@ -97,6 +100,7 @@ public class FrontEnd implements Auction {
 
     public void DiscoverReplicas() {
         try {
+            System.out.println("(FE) Discovering Replicas...");
             Registry registry = LocateRegistry.getRegistry("localhost");
             String[] boundNames = registry.list();
 
@@ -111,9 +115,9 @@ public class FrontEnd implements Auction {
                 }
             }
             // Optionally, print out the discovered replicas
-            System.out.println("Discovered Replicas: " + replicaTable);
+            System.out.println("(FE) Discovered Replicas: " + replicaTable);
         } catch (Exception e) {
-            System.err.println("Exception in DiscoverReplicas: " + e.toString());
+            System.err.println("(FE) Exception in DiscoverReplicas: " + e.toString());
             e.printStackTrace();
         }
     }
