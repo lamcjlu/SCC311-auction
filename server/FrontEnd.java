@@ -22,8 +22,8 @@ public class FrontEnd implements Auction {
 
             for (int i = 0; i <= n; i++) {
                 try {
-                    System.out.println("FE: java Replica " + i);
-                    Runtime.getRuntime().exec("java Replica " + i);
+                    System.out.println("FE: java Replica " + i + " &");
+                    Runtime.getRuntime().exec("java Replica " + i + " &");
                 } catch (Exception e) {
                     System.err.println("(FE) Error in starting new replica: " + e.getMessage());
                 }
