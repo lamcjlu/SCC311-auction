@@ -80,7 +80,7 @@ public class FrontEnd implements Auction {
     public FrontEnd() {
         this.primaryID = -1;
         replicaTable = new HashMap<>();
-        // fixReplica();
+        fixReplica();
     }
 
     private Auction InvokePrimary() throws RemoteException {
@@ -103,7 +103,10 @@ public class FrontEnd implements Auction {
             System.out.println("(FE) Discovering Replicas...");
             Registry registry = LocateRegistry.getRegistry("localhost");
             String[] boundNames = registry.list();
-
+            if (boundNames.length == 0) {
+                System.out.println("(FE) FATAL ERROR RMI IS EMPTY. Exiting...");
+                System.exit(1);
+            }
             // Pattern to match "Auction_#" names
             Pattern pattern = Pattern.compile("Auction_(\\d+)");
             for (String name : boundNames) {
