@@ -31,6 +31,7 @@ public class FrontEnd implements Auction {
 
             try {
                 DiscoverReplicas();
+                System.out.println("(FE) Invoking challenge: -2, Init");
                 InvokePrimary().challenge(-2, "Init"); // Launch check
                 System.out.println("(Fix) PR_Launch: Auction_" + primaryID + " is alive.");
             } catch (Exception e) {
@@ -70,6 +71,8 @@ public class FrontEnd implements Auction {
             for (Map.Entry<Integer, String> entry : replicaTable.entrySet()) {
                 String replicaName = entry.getValue();
                 Auction replica = (Auction) registry.lookup(replicaName);
+                System.out.println("(FE) Broadcasting new primary replica: " + primaryID);
+                System.out.println("(FE) Invoking challenge: " + primaryID + ", NewPrimary");
                 replica.challenge(primaryID, "NewPrimary");
             }
         } catch (Exception e) {
@@ -89,6 +92,7 @@ public class FrontEnd implements Auction {
         try {
                 Registry registry = LocateRegistry.getRegistry("localhost");
                 Auction replica = (Auction) registry.lookup(replicaName);
+                System.out.println("(FE) Invoking challenge: " + primaryID + ", Primary");
                 replica.challenge(primaryID, "Primary"); // Health check
                 return replica;
             } catch (Exception e) {

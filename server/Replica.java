@@ -44,6 +44,7 @@ public class Replica implements Auction {
 
     // Sync method to synchronize state with other replicas
     public void sync(int primaryReplicaId, Payload RemotePayload) throws RemoteException {
+        System.out.println("(Auction_"+replicaID+"-Sync) Syncing with replicaID: " + primaryReplicaId);
         DiscoverReplicas();
 
         // If this is the primary replica, send payload to all other replicas
@@ -105,9 +106,13 @@ public class Replica implements Auction {
     }
     public void DiscoverReplicas() {
         try {
+            System.out.println("(Auction_"+replicaID+" Info) Discovering replicas...");
             Registry registry = LocateRegistry.getRegistry("localhost");
             String[] boundNames = registry.list();
-
+            if (boundNames.length == 0) {
+                System.out.println("(Auction_"+replicaID+" Info)  FATAL ERROR RMI IS EMPTY. Exiting...");
+                System.exit(1);
+            }
             // Pattern to match "Auction_#" names
             Pattern pattern = Pattern.compile("Auction_(\\d+)");
             for (String name : boundNames) {
@@ -119,7 +124,7 @@ public class Replica implements Auction {
                 }
             }
             // Optionally, print out the discovered replicas
-            System.out.println("Discovered Replicas: " + replicaTable);
+            System.out.println("(Auction_"+replicaID+" Info) Discovered Replicas: " + replicaTable);
         } catch (Exception e) {
             System.err.println("Exception in DiscoverReplicas: " + e.toString());
             e.printStackTrace();
@@ -158,16 +163,18 @@ public class Replica implements Auction {
     @Override
     public ChallengeInfo challenge(int userID, String clientChallenge) throws RemoteException {
         // ChallangeInfo is now a helper method :>
-        System.out.println("(Auction_"+this.replicaID+" Info) Received challenge from replica ID: " + userID);
+        System.out.println("(Auction_"+this.replicaID+" Info) Received challenge with userID: " + userID + " and clientChallenge: " + clientChallenge);
         if (userID == this.replicaID && clientChallenge.equals("Primary")){
             // Assign myself as the primary replica
             this.isPrimary = true;
             // Initialize Sync
+            System.out.println("(Auction_"+this.replicaID+" Info) isPrimary: " + this.isPrimary + " | Initializing Sync with payload: " + getpayload());
             sync(this.replicaID, getpayload());
         }
         if (userID == -2 && clientChallenge.equals("Init")){
             // Build the auction items as I am the genesis primary replica
             this.initAuctionItems();
+            System.out.println("(Auction_"+this.replicaID+" Info) Initialized AuctionItems: " + auctionItems);
         }
         if(!this.isPrimary && clientChallenge.equals("NewPrimary")){
             // Update new primary replica ID
@@ -178,7 +185,8 @@ public class Replica implements Auction {
             // If I were the primary replica but the new primary replica is not me
             // I am no longer the primary replica
             this.isPrimary = false;
-            suicide();
+            System.out.println("(Auction_"+this.replicaID+" Info) I am no longer the primary replica | isPrimary: " + this.isPrimary);
+            this.suicide();
         }
         return null;
     }
@@ -291,6 +299,7 @@ public class Replica implements Auction {
         BID, CLOSE_AUCTION, MODIFY_BID
     }
     public void suicide(){
+        System.out.println("Auction_" + replicaID + " is suiciding with primaryID = " + primaryID);
         System.exit(0);
     }
     public static void main(String[] args) {
