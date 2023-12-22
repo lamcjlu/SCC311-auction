@@ -52,15 +52,17 @@ public class Replica implements Auction {
             System.out.println("(Auction_"+replicaID+"-Primary) Syncing state with " + checkAliveReplicas() + " other replicas");
             for (Map.Entry<Integer, String> entry : replicaTable.entrySet()) {
                 int replicaID = entry.getKey();
-
+                System.out.println("(Auction_"+replicaID+"-Primary) Syncing with replicaID: " + replicaID);
                 // Skip if the replica is the primary itself
                 if (replicaID == this.replicaID) {
+                    System.out.println("(Auction_"+replicaID+"-Primary) Skipping self");
                     continue;
                 }
 
                 String replicaName = entry.getValue();
                 try {
                     Registry registry = LocateRegistry.getRegistry("localhost");
+                    System.out.println("(Auction_"+replicaID+"-Primary) Looking up and syncing replica: " + replicaName);
                     Replica targetReplica = (Replica) registry.lookup(replicaName);
                     targetReplica.sync(this.primaryID, this.getpayload()); // send payload to replica
                 } catch (RemoteException e) {
@@ -71,6 +73,7 @@ public class Replica implements Auction {
             }
         } else {
             // If this is a backup replica, check if primary is ahead of self and update
+            System.out.println("(Auction_"+replicaID+"-Backup) Syncing with replicaID: " + primaryReplicaId + " | RemotePayload: " + RemotePayload);
             updateStateWithPayload(RemotePayload);
         }
     }
@@ -91,6 +94,7 @@ public class Replica implements Auction {
     }
 
     public void updateStateWithPayload(Payload remotePayload) {
+        System.out.println("(Auction_"+replicaID+") UpdatePayload - RemotePL: " + remotePayload + " | SelfPL: " + this.getpayload());
         if (remotePayload.getSize() > this.getpayload().getSize()) {
             this.auctionItems = remotePayload.auctionItems;
             this.userInfo = remotePayload.userInfo;

@@ -93,8 +93,15 @@ public class FrontEnd implements Auction {
                 Registry registry = LocateRegistry.getRegistry("localhost");
                 Auction replica = (Auction) registry.lookup(replicaName);
                 System.out.println("(FE) Invoking challenge: " + primaryID + ", Primary");
-                replica.challenge(primaryID, "Primary"); // Health check
-                return replica;
+                if (replica.challenge(primaryID, "Primary") == null){
+                    // Health check
+                    System.out.println("(FE) Invoke" + replicaName + " = PASS, returning - " + replicaName);
+                    return replica;
+                } else {
+                    System.err.println("(FE) Invoke" + replicaName + " = FAIL. FE issue? Exiting...");
+                    System.exit(1);
+                    return null;
+                }
             } catch (Exception e) {
                 System.err.println("(FE) Invoke: PrimaryReplica " + replicaName + " failed, re-electing.");
                 fixReplica(); // Fixing the failed replica
