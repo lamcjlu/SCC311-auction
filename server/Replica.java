@@ -40,40 +40,44 @@ public class Replica implements Auction {
         auctionItems = new HashMap<>();
         userInfo = new HashMap<>();
         auctionSaleItems = new HashMap<>();
+        System.out.println(debugHeader()+"-Replica Initialized.");
     }
 
     // Sync method to synchronize state with other replicas
-    public void sync(int primaryReplicaId, Payload RemotePayload) throws RemoteException {
-        System.out.println("(Auction_"+replicaID+"-Sync) Syncing with replicaID: " + primaryReplicaId);
+    public void sync(int primaryReplicaId, Payload RemotePayload, int callerID) throws RemoteException {
+        System.out.println(debugHeader()+"-Sync Syncing with PriRepID: " + primaryReplicaId);
+        System.out.println(debugHeader()+"-Sync CallerID: " + callerID);
         DiscoverReplicas();
 
         // If this is the primary replica, send payload to all other replicas
         if (this.replicaID == primaryReplicaId && this.isPrimary) {
-            System.out.println("(Auction_"+replicaID+"-Primary) Syncing state with " + checkAliveReplicas() + " other replicas");
+            System.out.println(debugHeader()+"-Sync Syncing state with " + checkAliveReplicas() + " other replicas");
             for (Map.Entry<Integer, String> entry : replicaTable.entrySet()) {
-                int replicaID = entry.getKey();
-                System.out.println("(Auction_"+replicaID+"-Primary) Syncing with replicaID: " + replicaID);
+                int targetID = entry.getKey();
+                System.out.println(debugHeader()+"-Sync Syncing with replicaID: " + targetID);
                 // Skip if the replica is the primary itself
-                if (replicaID == this.replicaID) {
-                    System.out.println("(Auction_"+replicaID+"-Primary) Skipping self");
+                if (targetID == this.replicaID) {
+                    System.out.println(debugHeader()+"-Sync Skipping self");
                     continue;
                 }
 
                 String replicaName = entry.getValue();
                 try {
                     Registry registry = LocateRegistry.getRegistry("localhost");
-                    System.out.println("(Auction_"+replicaID+"-Primary) Looking up and syncing replica: " + replicaName);
+                    System.out.println(debugHeader()+"-Sync Looking up and syncing replica: " + replicaName);
                     Replica targetReplica = (Replica) registry.lookup(replicaName);
-                    targetReplica.sync(this.primaryID, this.getpayload()); // send payload to replica
+                    targetReplica.sync(this.primaryID, this.getpayload(), this.replicaID); // send payload to replica
+                    System.out.println(debugHeader()+"-Sync Synced with replica: " + replicaName);
+                    System.out.println(debugHeader()+"-Sync primaryID: " + this.primaryID + " | replicaID: " + targetID + " | payload: " + this.getpayload());
                 } catch (RemoteException e) {
-                    System.err.println("Error syncing with replica " + replicaName + ": " + e.getMessage());
+                    System.err.println(debugHeader()+"-Sync Error syncing with replica " + replicaName + ": " + e.getMessage());
                 } catch (NotBoundException e) {
                     throw new RuntimeException(e);
                 }
             }
         } else {
             // If this is a backup replica, check if primary is ahead of self and update
-            System.out.println("(Auction_"+replicaID+"-Backup) Syncing with replicaID: " + primaryReplicaId + " | RemotePayload: " + RemotePayload);
+            System.out.println(debugHeader()+"-Sync Syncing with replicaID: " + primaryReplicaId + " | RemotePayload: " + RemotePayload);
             updateStateWithPayload(RemotePayload);
         }
     }
@@ -94,7 +98,7 @@ public class Replica implements Auction {
     }
 
     public void updateStateWithPayload(Payload remotePayload) {
-        System.out.println("(Auction_"+replicaID+") UpdatePayload - RemotePL: " + remotePayload + " | SelfPL: " + this.getpayload());
+        System.out.println(debugHeader()+"-updateStateWithPayload UpdatePayload - RemotePL: " + remotePayload + " | SelfPL: " + this.getpayload());
         if (remotePayload.getSize() > this.getpayload().getSize()) {
             this.auctionItems = remotePayload.auctionItems;
             this.userInfo = remotePayload.userInfo;
@@ -105,16 +109,16 @@ public class Replica implements Auction {
             this.replicaTable = remotePayload.replicaTable;
             this.itemIDCounter = remotePayload.itemIDCounter;
             this.userIDCounter = remotePayload.userIDCounter;
-            System.out.println("(Info) Auction_"+ replicaID +" State updated with larger remote payload.");
+            System.out.println(debugHeader()+"-updateStateWithPayload State updated with larger remote payload.");
         }
     }
     public void DiscoverReplicas() {
         try {
-            System.out.println("(Auction_"+replicaID+" Info) Discovering replicas...");
+            System.out.println(debugHeader()+"-DR Discovering replicas...");
             Registry registry = LocateRegistry.getRegistry("localhost");
             String[] boundNames = registry.list();
             if (boundNames.length == 0) {
-                System.out.println("(Auction_"+replicaID+" Info)  FATAL ERROR RMI IS EMPTY. Exiting...");
+                System.out.println(debugHeader()+"-DR FATAL ERROR RMI IS EMPTY. Exiting...");
                 System.exit(1);
             }
             // Pattern to match "Auction_#" names
@@ -128,15 +132,15 @@ public class Replica implements Auction {
                 }
             }
             // Optionally, print out the discovered replicas
-            System.out.println("(Auction_"+replicaID+" Info) Discovered Replicas: " + replicaTable);
+            System.out.println(debugHeader()+"-DR Discovered Replicas: " + replicaTable);
         } catch (Exception e) {
-            System.err.println("Exception in DiscoverReplicas: " + e.toString());
+            System.err.println(debugHeader()+"-DR Exception in DiscoverReplicas: " + e);
             e.printStackTrace();
         }
     }
     private int checkAliveReplicas() {
         int aliveCount = 0;
-
+        System.out.println(debugHeader()+"-ChkAlive Checking alive replicas...");
         // Using an Iterator to avoid ConcurrentModificationException while removing elements
         Iterator<Map.Entry<Integer, String>> iterator = replicaTable.entrySet().iterator();
         while (iterator.hasNext()) {
@@ -149,7 +153,8 @@ public class Replica implements Auction {
                 aliveCount++;
             } catch (Exception e) {
                 iterator.remove(); // Remove the replica from the table if it raises an exception
-                System.err.println("(ChkAlv) Removing failed replica: " + entry.getKey());
+                System.err.println(debugHeader()+"-ChkAlive Removing failed replica: " + entry.getKey());
+
             }
         }
 
@@ -167,29 +172,29 @@ public class Replica implements Auction {
     @Override
     public ChallengeInfo challenge(int userID, String clientChallenge) throws RemoteException {
         // ChallangeInfo is now a helper method :>
-        System.out.println("(Auction_"+this.replicaID+" Info) Received challenge with userID: " + userID + " and clientChallenge: " + clientChallenge);
+        System.out.println(debugHeader()+"-CL Received challenge with userID: " + userID + " and clientChallenge: " + clientChallenge);
         if (userID == this.replicaID && clientChallenge.equals("Primary")){
             // Assign myself as the primary replica
             this.isPrimary = true;
             // Initialize Sync
-            System.out.println("(Auction_"+this.replicaID+" Info) isPrimary: " + this.isPrimary + " | Initializing Sync with payload: " + getpayload());
-            sync(this.replicaID, getpayload());
+            System.out.println(debugHeader()+"-CL Initializing Sync with payload: " + getpayload());
+            sync(this.replicaID, getpayload(), this.replicaID);
         }
         if (userID == -2 && clientChallenge.equals("Init")){
             // Build the auction items as I am the genesis primary replica
             this.initAuctionItems();
-            System.out.println("(Auction_"+this.replicaID+" Info) Initialized AuctionItems: " + auctionItems);
+            System.out.println(debugHeader()+"-CL Initialized AuctionItems: " + auctionItems);
         }
         if(!this.isPrimary && clientChallenge.equals("NewPrimary")){
             // Update new primary replica ID
             this.primaryID = userID;
-            System.out.println("(Auction_"+this.replicaID+" Info) I am new primary replica ID: " + userID);
+            System.out.println(debugHeader()+"-CL I am new primary replica ID: " + userID);
         }
         if(this.isPrimary && userID != replicaID){
             // If I were the primary replica but the new primary replica is not me
             // I am no longer the primary replica
             this.isPrimary = false;
-            System.out.println("(Auction_"+this.replicaID+" Info) I am no longer the primary replica | isPrimary: " + this.isPrimary);
+            System.out.println(debugHeader()+"-CL I am no longer the primary replica | isPrimary: " + this.isPrimary);
             this.suicide();
         }
         return null;
@@ -206,7 +211,7 @@ public class Replica implements Auction {
             return auctionItems.get(itemID);
         } else {
             // If this is a backup replica, synchronize its state with the primary
-            sync(this.primaryID, getpayload());
+            sync(this.primaryID, getpayload(), this.replicaID);
         }
         return auctionItems.get(itemID);
     }
@@ -302,8 +307,11 @@ public class Replica implements Auction {
     private enum AccessType {
         BID, CLOSE_AUCTION, MODIFY_BID
     }
+    private String debugHeader(){
+        return "(Auction_" + this.replicaID + "|isPrimary: " + this.isPrimary + ")";
+    }
     public void suicide(){
-        System.out.println("Auction_" + replicaID + " is suiciding with primaryID = " + primaryID);
+        System.out.println(debugHeader()+ " is suiciding with primaryID = " + primaryID);
         System.exit(0);
     }
     public static void main(String[] args) {
