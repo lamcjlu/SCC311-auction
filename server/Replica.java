@@ -330,8 +330,10 @@ public class Replica implements Auction {
 
             Replica s = new Replica(replicaId);
             Auction stub = (Auction) UnicastRemoteObject.exportObject(s, 0);
+            Replica stb = (Replica) UnicastRemoteObject.exportObject(s, 0);
             Registry registry = LocateRegistry.getRegistry("localhost");
             registry.rebind(name, stub);
+            registry.rebind("R"+name, stb);
             System.out.println("Server ready as " + name);
         } catch (Exception e) {
             System.err.println("Exception:");
