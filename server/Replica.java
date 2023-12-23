@@ -66,6 +66,11 @@ public class Replica implements Auction {
                     Registry registry = LocateRegistry.getRegistry("localhost");
                     System.out.println(debugHeader()+"-Sync Looking up and syncing replica: " + replicaName);
                     Replica targetReplica = (Replica) registry.lookup(replicaName);
+                    System.out.println(debugHeader()+"-Sync targetReplica: " + targetReplica);
+                    if (targetReplica == null) {
+                        System.out.println(debugHeader()+"-Sync targetReplica is null - Exiting...");
+                        System.exit(1);
+                    }
                     targetReplica.sync(this.primaryID, this.getpayload(), this.replicaID); // send payload to replica
                     System.out.println(debugHeader()+"-Sync Synced with replica: " + replicaName);
                     System.out.println(debugHeader()+"-Sync primaryID: " + this.primaryID + " | replicaID: " + targetID + " | payload: " + this.getpayload());
